@@ -14,9 +14,9 @@ function users() {
     done < $file2
     rm file.txt sort_file.txt  
 }
-
+есс
 function processes() {
-    ps -a
+    ps -Ao pid,comm --sort=pid
 }
 
 function help() {
@@ -29,18 +29,18 @@ function help() {
 }
 
 function output() {
-    if [ -f "$1" ] && [ -w "$1" ]; then
+    if [ -f "$1" ] || touch "$1"; then  
         exec 1>"$1"  
     else
-        echo "The file does not exist or you do not have permission to write to it" >&2
+        touch "$1" && exec 1>"$1" || echo "The file cannot be created or you do not have permission to write to it" >&2
     fi
 }
 
 function output_err() {
-    if [ -f "$1" ] && [ -w "$1" ]; then
+    if [ -f "$1" ] || touch "$1"; then  
         exec 2>"$1"  
     else
-        echo "The file does not exist or you do not have permission to write to it" >&2
+        touch "$1" && exec 2>"$1" || echo "The file cannot be created or you do not have permission to write to it" >&2
     fi
 }
 
@@ -48,6 +48,9 @@ count=2
 for arg in "$@"; do
     if [ "$arg" == "-e" ] || [ "$arg" == "--errors" ]; then
         file_name=${!count}
+        if [ ! -f "$file_name" ]; then
+            touch "$file_name"  
+        fi
         output_err "$file_name"
         break
     fi
@@ -58,6 +61,9 @@ count=2
 for arg in "$@"; do
     if [ "$arg" == "-l" ] || [ "$arg" == "--log" ]; then
         file_name=${!count}
+        if [ ! -f "$file_name" ]; then
+            touch "$file_name" 
+        fi
         output "$file_name"
         break
     fi
@@ -67,7 +73,7 @@ done
 TEMP=$(getopt -o uphle --long users,processes,help,log:,errors: -- "$@")
 eval set -- "$TEMP"
 
-while [ -n "$1" ]; do
+while [ -n "$1"; do
     case "$1" in
     -u | --users)
         users
