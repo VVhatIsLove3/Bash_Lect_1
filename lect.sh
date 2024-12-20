@@ -1,18 +1,7 @@
 #!/bin/bash
 
 function users() {
-    file="/etc/passwd" 
-    list=$(grep home $file)  
-    touch file.txt
-    for i in $list; do
-        echo $i >> file.txt  
-    done
-    sort file.txt -o sort_file.txt  
-    file2=sort_file.txt
-    while read -r str; do  
-        echo $str
-    done < $file2
-    rm file.txt sort_file.txt  
+    awk -F: '$3>=1000 { print $1 " " $6 }' /etc/passwd | sort
 }
 есс
 function processes() {
