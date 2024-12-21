@@ -1,150 +1,185 @@
 #!/bin/bash
 
-list_users() {
-    awk -F: '$3>=1000 { print $1 " " $6 }' /etc/passwd | sort
+# Функция для вывода справки
+display_help() {
+    echo "Использование: \\\\$0 [опции]"
+    echo ""
+    echo "Опции"
+    echo "  -u, --users            Показывает список пользователей и их домашние директории."
+    echo "  -p, --processes        Показывает список активных процессов."
+    echo "  -h, --help             Показывает эту справку."
+    echo "  -l ПУТЬ, --log ПУТЬ    Записывает вывод в указанный файл."
+    echo "  -e ПУТЬ, --errors ПУТЬ Записывает ошибки в указанный файл."
 }
 
-print_help() {
-    echo "Using: \\\\$0 [options]"
-    echo ""
-    echo "Options"
-    echo "  -u, --users            Выводит перечень пользователей и их домашних директорий."
-    echo "  -p, --processes        Выводит перечень запущенных процессов."
-    echo "  -h, --help             Выводит данную справку."
-    echo "  -l PATH, --log PATH    Записывает вывод в файл по заданному пути."
-    echo "  -e PATH, --errors PATH Записывает ошибки в файл ошибок по заданному пути."
-}
-log_PATH=""
-error_PATH=""
-action=""
-list_processes() {
-    ps -Ao pid,comm --sort=pid
-}
-ch_and_create_file() {
-    local path="$1"
+# Инициализация переменных для хранения путей
+log_file=""
+error_file=""
+selected_action=""
+
+# Функция для проверки существования директории и создания файла
+check_and_create_file() {
+    local path="\$1"
     if [[ ! -d "$(dirname "$path")" ]]; then
-        echo "Ошибка: Директория '$path' не существует." >&2
+        echo "Ошибка: Директория '$path' не найдена." >&2
         exit 1
     fi
 
     if [[ -f "$path" ]]; then
-        echo "Предупреждение: Файл '$path' существует. Будет перезаписан." >&2
+        echo "Внимание: Файл '$path' уже существует. Он будет перезаписан." >&2
     fi
-    touch "$path" 
+    touch "$path" # Создаем файл, если его нет.
+    # Проверяем права на запись
     if [[ ! -w "$path" ]]; then
         echo "Ошибка: Нет прав на запись в '$path'" >&2
         exit 1
     fi
 }
 
-r_stdout() {
-    local log_PATH="$1"
-    ch_and_create_file "$log_PATH"
-    exec > "$log_PATH"
+# Функция для отображения пользователей и их домашних директорий
+show_users() {
+    awk -F: '\$3>=1000 { print \$1 " " \$6 }' /etc/passwd | sort
 }
 
-r_stderr() {
-    local error_PATH="$1"
-    ch_and_create_file "$error_PATH"
-    exec 2>"$error_PATH"
+# Функция для отображения активных процессов
+show_processes() {
+    ps -Ao pid,comm --sort=pid
 }
+
+# Функция для перенаправления стандартного вывода
+redirect_stdout() {
+    local log_file="\$1"
+    check_and_create_file "$log_file"
+    exec > "$log_file"
+}
+
+# Функция для перенаправления стандартного потока ошибок
+redirect_stderr() {
+    local error_file="\$1"
+    check_and_create_file "$error_file"
+    exec 2>"$error_file"
+}
+
+# Обработка аргументов командной строки
 while getopts ":uphl:e:-:" opt; do
     case $opt in
         u)
-            action="users"
-
+            selected_action="users"
             ;;
         p)
-            action="processes"
-
+            selected_action="processes"
             ;;
         h)
-            action="help"
-
+            selected_action="help"
+            display_help
             exit 0
             ;;
         l)
-            log_PATH="$OPTARG"
-            r_stdout "$log_PATH"
+            log_file="$OPTARG"
+            redirect_stdout "$log_file"
             ;;
         e)
-            error_PATH="$OPTARG"
-            r_stderr "$error_PATH"
+            error_file="$OPTARG"
+            redirect_stderr "$error_file"
             ;;
         -)
             case "${OPTARG}" in
                 users)
-                    action="users"
-
+                    selected_action="users"
                     ;;
                 processes)
-                    action="processes"
-
+                    selected_action="processes"
                     ;;
                 help)
-                    action="help"
+                    selected_action="help"
+                    display_help
                     exit 0
                     ;;
                 log)
-                    log_PATH="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-                    r_stdout "$log_PATH"
+                    log_file="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                    redirect_stdout "$log_file"
                     ;;
                 errors)
-                    error_PATH="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-                    r_stderr "$error_PATH"
+                    error_file="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                    redirect_stderr "$error_file"
                     ;;
                 *)
-                    echo "Invalid option: --${OPTARG}" >&2
+                    error_msg="Неизвестный флаг: --${OPTARG}"
+                    if [ -n "$error_file" ]; then
+                        echo "$error_msg" >> "$error_file"  # Запись ошибки в файл ошибок
+                    else
+                        echo "$error_msg" >&2  # Вывод ошибки в терминал
+                    fi
                     exit 1
                     ;;
             esac
             ;;
         \?)
-            echo "Invalid option: -$OPTARG" >&2
+            error_msg="Неизвестный флаг: -$OPTARG"
+            if [ -n "$error_file" ]; then
+                echo "$error_msg" >> "$error_file"  # Запись ошибки в файл ошибок
+            else
+                echo "$error_msg" >&2  # Вывод ошибки в терминал
+            fi
             exit 1
             ;;
         :)
-            echo "Option -$OPTARG requires an argument." >&2
+            error_msg="Отсутствует аргумент для флага: -$OPTARG"
+            if [ -n "$error_file" ]; then
+                echo "$error_msg" >> "$error_file"  # Запись ошибки в файл ошибок
+            else
+                echo "$error_msg" >&2  # Вывод ошибки в терминал
+            fi
             exit 1
             ;;
     esac
 done
-if [ -n "$error_PATH" ]; then
-    if [[ "$error_PATH" == *.* ]]; then  # Проверка на расширение .*
-        touch "$error_PATH"  # Создаем файл, если он не существует
-        echo "Ошибка, действие не задано" > "$error_PATH"
-    else
-        echo "Error: Invalid file extension for error path $error_PATH" >&2
-        exit 1
-    fi
-else
-    # Если error_PATH не указан, создаем файл по умолчанию
-    default_error_file="error_log.txt"
-    touch "$default_error_file"  # Создаем файл, если он не существует
-    echo "Ошибка, действие не задано" > "$default_error_file"
-fi
-execute_action() {
-    case $action in
-        users) list_users ;;
-        processes) list_processes ;;
-        help) print_help ;;
+
+# Выполнение действия в зависимости от выбранного аргумента
+perform_action() {
+    case $selected_action in
+        users) show_users ;;
+        processes) show_processes ;;
+        help) display_help ;;
         *)
-            echo "No valid action specified." >&2
+            echo "Не указано корректное действие." >&2
             exit 1
             ;;
     esac
 }
-if [ -n "$log_PATH" ]; then
-    if [ -w "$log_PATH" ] || [ ! -e "$log_PATH" ]; then
-        execute_action > "$log_PATH"
+
+# Проверка на отсутствие действия (если ни один флаг не был указан)
+if [[ -z "$selected_action" ]]; then
+    error_msg="Ошибка: Не указано действие."
+    if [ -n "$error_file" ]; then
+        echo "$error_msg" >> "$error_file"  # Запись ошибки в файл ошибок
     else
-        echo "Error: Cannot write to log path $log_PATH" >&2
+        echo "$error_msg" >&2  # Вывод ошибки в терминал
+    fi
+    exit 1
+fi
+
+if [ -n "$log_file" ]; then
+    if [ -w "$log_file" ] || [ ! -e "$log_file" ]; then
+        perform_action > "$log_file"
+    else
+        echo "Ошибка: Невозможно записать в файл логов $log_file" >&2
         exit 1
     fi
-else
-    execute_action
-    default_log_file="logi.log"
-    {
-        execute_action
-    } > "$default_log_file"
+fi
+
+# Если не указаны флаги -l или -e, выводим результат в терминал
+if [ -z "$log_file" ] && [ -z "$error_file" ]; then
+    perform_action
+fi
+
+# Обработка случая, когда не указано действие (selected_action пуст)
+if [ -z "$selected_action" ]; then
+    error_msg="Ошибка: Не указано действие."
+    if [ -n "$error_file" ]; then
+        echo "$error_msg" >> "$error_file"  # Запись ошибки в файл ошибок
+    else
+        echo "$error_msg" >&2  # Вывод ошибки в терминал
+    fi
+    exit 1
 fi
